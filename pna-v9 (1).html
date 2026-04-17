@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Pé na Areia"/>
+<meta name="theme-color" content="#1A2864"/>
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjEwMCIgZmlsbD0iIzFBMjg2NCIvPjx0ZXh0IHg9IjI1NiIgeT0iMzQwIiBmb250LXNpemU9IjI4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFwcGxlIENvbG9yIEVtb2ppLFNlZ29lIFVJIEVtb2ppLHNhbnMtc2VyaWYiPvCfprY8L3RleHQ+PC9zdmc+"/>
+<title>Pé na Areia · Estoque</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>*{box-sizing:border-box;margin:0;padding:0;}body{background:#FAF3EA;-webkit-tap-highlight-color:transparent;}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+
+const {useState, useEffect, useRef} = React;
+
+const FB  = "https://pna-estoque-default-rtdb.firebaseio.com";
+const LAT = -22.9715, LON = -43.1822;
+const NAVY = "#1A2864", BLUE = "#1A78C8", GOLD = "#F0B400", CREAM = "#FAF3EA";
+
+const DEFAULT_PRODS = [
+  {id:1, nome:"Pink Lemonade",              cat:"Sucos",    est:0, custo:5.90, venda:12},
+  {id:2, nome:"Abacaxi c/ Hortelã",         cat:"Sucos",    est:0, custo:5.30, venda:12},
+  {id:3, nome:"Caju",                        cat:"Sucos",    est:0, custo:5.30, venda:12},
+  {id:4, nome:"Laranja",                     cat:"Sucos",    est:0, custo:5.30, venda:12},
+  {id:5, nome:"Laranja, Beterraba e Cenoura",cat:"Sucos",    est:0, custo:5.10, venda:12},
+  {id:6, nome:"Verde",                       cat:"Sucos",    est:0, custo:5.50, venda:12},
+  {id:7, nome:"Cerveja Nacional",            cat:"Bebidas",  est:0, custo:5,    venda:12},
+  {id:8, nome:"Cerveja Outras",              cat:"Bebidas",  est:0, custo:7,    venda:15},
+  {id:9, nome:"Refrigerante",               cat:"Bebidas",  est:0, custo:3,    venda:8 },
+  {id:10,nome:"Água Mineral",               cat:"Bebidas",  est:0, custo:1.5,  venda:5 },
+  {id:11,nome:"Água de Coco",               cat:"Bebidas",  est:0, custo:5,    venda:12},
+  {id:12,nome:"Caipirinha",                 cat:"Drinks",   est:0, custo:10,   venda:30},
+  {id:13,nome:"Caipivodka",                 cat:"Drinks",   est:0, custo:12,   venda:35},
+  {id:14,nome:"Cadeira",                    cat:"Serviços", est:0, custo:0,    venda:0 },
+];
+
+const ICONS = {Sucos:"🥤", Bebidas:"🍺", Drinks:"🍹", "Serviços":"🪑", Outros:"📦"};
+const R$ = v => "R$ " + Number(v).toFixed(2).replace(".", ",");
+const now = () => new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+const DIAS  = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+
+async function fbRead(path) {
+  try { const r = await fetch(`${FB}/${path}.json`); return await r.json(); }
+  catch { return null; }
+}
+async function fbWrite(path, data) {
+  try { await fetch(`${FB}/${path}.json`, {method:"PUT", body:JSON.stringify(data), headers:{"Content-Type":"application/json"}}); }
+  catch {}
+}
+function toObj(arr, prefix) {
+  const o = {};
+  arr.forEach(x => { o[prefix + x.id] = x; });
+  return o;
+}
+
+async function fetchClima() {
+  try {
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,weathercode,windspeed_10m,winddirection_10m,relativehumidity_2m,uv_index,is_day&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,uv_index_max,sunrise,sunset&wind_speed_unit=kmh&timezone=America%2FSao_Paulo&forecast_days=5`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+function climaMock() {
+  const fmt = d => d.toISOString().slice(0,10);
+  const days = [0,1,2,3,4].map(i => { const d = new Date(); d.setDate(d.getDate()+i); return fmt(d); });
+  return {
+    _mock: true,
+    current: {temperature_2m:29, apparent_temperature:34, weathercode:1, windspeed_10m:18, winddirection_10m:135, relativehumidity_2m:72, uv_index:9, is_day:1},
+    daily: {time:days, weathercode:[1,2,61,3,0], temperature_2m_max:[32,31,28,30,33], temperature_2m_min:[23,22,21,22,24], precipitation_probability_max:[10,20,80,30,5], windspeed_10m_max:[22,25,35,20,18], uv_index_max:[10,9,4,7,11], sunrise:days.map(d=>d+"T05:52"), sunset:days.map(d=>d+"T17:48")}
+  };
+}
+function wIcon(c, day=true) {
+  if(c===0) return day?"☀️":"🌙"; if(c<=2) return"🌤️"; if(c===3) return"☁️";
+  if(c<=49) return"🌫️"; if(c<=59) return"🌦️"; if(c<=69) return"🌧️";
+  if(c<=84) return"🌧️"; if(c<=99) return"⛈️"; return"🌤️";
+}
+function wDesc(c) {
+  if(c===0) return"Céu limpo"; if(c===1) return"Principalmente limpo";
+  if(c===2) return"Parcialmente nublado"; if(c===3) return"Nublado";
+  if(c<=49) return"Nevoeiro"; if(c<=59) return"Garoa"; if(c<=69) return"Chuva";
+  if(c<=84) return"Pancadas"; if(c<=99) return"Tempestade"; return"Variável";
+}
+const wDir = d => ["N","NE","L","SE","S","SO","O","NO"][Math.round(d/45)%8];
+
+function App() {
+  const [prods,setProds]=useState([]);
+  const [hist,setHist]=useState([]);
+  const [aba,setAba]=useState("estoque");
+  const [filtro,setFiltro]=useState("Todos");
+  const [loading,setLoading]=useState(true);
+  const [syncing,setSyncing]=useState(false);
+  const [syncAt,setSyncAt]=useState("");
+  const [toast,setToast]=useState(null);
+  const [clima,setClima]=useState(null);
+  const [climaLoad,setClimaLoad]=useState(true);
+  const zerarConfRef=useRef(0);
+  const [zerarConf,_setZC]=useState(0);
+  const setZC=v=>{zerarConfRef.current=v;_setZC(v);};
+  const [mov,setMov]=useState(null);
+  const [movTipo,setMovTipo]=useState("s");
+  const [movQtd,setMovQtd]=useState(1);
+  const [movGrat,setMovGrat]=useState(false);
+  const [movObs,setMovObs]=useState("");
+  const [movQuem,setMovQuem]=useState("João Maurício");
+  const [editMod,setEditMod]=useState(null);
+  const [editForm,setEditForm]=useState({nome:"",cat:"Outros",custo:"",venda:""});
+  const rP=useRef([]);
+  const rH=useRef([]);
+  const mAberto=useRef(false);
+  const setP=p=>{rP.current=p;setProds(p);};
+  const setH=h=>{rH.current=h;setHist(h);};
+  const toast$=(msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),2600);};
+
+  useEffect(()=>{
+    (async()=>{
+      const p=await fbRead("produtos");
+      const h=await fbRead("historico");
+      setP(p?Object.values(p).filter(x=>x&&x.id).sort((a,b)=>a.id-b.id):JSON.parse(JSON.stringify(DEFAULT_PRODS)));
+      setH(h?Object.values(h).filter(x=>x&&x.id).sort((a,b)=>b.id-a.id):[]);
+      setSyncAt(new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}));
+      setLoading(false);
+    })();
+    const iv=setInterval(async()=>{
+      if(mAberto.current)return;
+      const p=await fbRead("produtos");
+      const h=await fbRead("historico");
+      if(p&&!mAberto.current){
+        setP(Object.values(p).filter(x=>x&&x.id).sort((a,b)=>a.id-b.id));
+        setH(h?Object.values(h).filter(x=>x&&x.id).sort((a,b)=>b.id-a.id):[]);
+        setSyncAt(new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}));
+      }
+    },10000);
+    return()=>clearInterval(iv);
+  },[]);
+
+  useEffect(()=>{
+    (async()=>{setClimaLoad(true);const c=await fetchClima();setClima(c||climaMock());setClimaLoad(false);})();
+  },[]);
+
+  const syncManual=async()=>{
+    setSyncing(true);
+    const p=await fbRead("produtos");const h=await fbRead("historico");
+    setP(p?Object.values(p).filter(x=>x&&x.id).sort((a,b)=>a.id-b.id):rP.current);
+    setH(h?Object.values(h).filter(x=>x&&x.id).sort((a,b)=>b.id-a.id):rH.current);
+    setSyncAt(new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}));
+    setSyncing(false);
+  };
+
+  const gravaP=async p=>{await fbWrite("produtos",toObj(p,"p"));};
+  const gravaH=async h=>{await fbWrite("historico",toObj(h.slice(0,200),"h"));};
+
+  const registrar=async()=>{
+    if(!mov||movQtd<=0)return;
+    const pa=rP.current,ha=rH.current;
+    const novos=pa.map(p=>p.id!==mov.id?p:{...p,est:movTipo==="e"?p.est+movQtd:Math.max(0,p.est-movQtd)});
+    const reg={id:Date.now(),nome:mov.nome,cat:mov.cat,tipo:movTipo,qtd:movQtd,grat:movGrat,obs:movObs,quem:movQuem,quando:now(),precoVenda:mov.venda,custoUnit:mov.custo};
+    const nh=[reg,...ha].slice(0,200);
+    setP(novos);setH(nh);
+    gravaP(novos);gravaH(nh);
+    mAberto.current=false;setMov(null);
+    toast$(movGrat?`🎁 Cortesia: ${movQtd}x ${mov.nome}`:movTipo==="e"?`+${movQtd} ${mov.nome} ✓`:`-${movQtd} ${mov.nome} ✓`);
+  };
+
+  const salvaProds=async p=>{setP(p);await gravaP(p);};
+
+  const zerarTudo=async()=>{
+    const novos=rP.current.map(p=>({...p,est:0}));
+    const reg={id:Date.now(),nome:"— ESTOQUE ZERADO —",cat:"Sistema",tipo:"zerar",qtd:0,grat:false,obs:"Zerado manualmente",quem:"Admin",quando:now(),precoVenda:0,custoUnit:0};
+    const nh=[reg,...rH.current].slice(0,200);
+    setP(novos);setH(nh);gravaP(novos);gravaH(nh);
+    setZC(0);toast$("🔄 Estoque zerado!");
+  };
+
+  const exportCSV=()=>{
+    const esc=v=>{const s=String(v??"");return(s.includes(",")||s.includes('"')||s.includes("\n"))?`"${s.replace(/"/g,'""')}"`:s;};
+    const p=rP.current,h=rH.current;
+    const ent=h.filter(x=>x.tipo==="e"),sai=h.filter(x=>x.tipo==="s");
+    const rows=[
+      [`Pé na Areia · Barraca 175 — ${new Date().toLocaleString("pt-BR")}`],[],
+      ["=== ESTOQUE ATUAL ==="],["Produto","Categoria","Qtd","Custo Unit.","Preço Venda","Val. Estoque","Rec. Potencial","Margem Pot."],
+      ...p.map(x=>[x.nome,x.cat,x.est,x.custo,x.venda,(x.est*x.custo).toFixed(2),(x.est*x.venda).toFixed(2),(x.est*(x.venda-x.custo)).toFixed(2)]),
+      [],[],[`=== ENTRADAS (${ent.length}) ===`],["Data/Hora","Produto","Categoria","Qtd","Custo Unit.","Custo Total","Quem","Obs"],
+      ...(ent.length>0?ent.map(x=>[x.quando,x.nome,x.cat,x.qtd,x.custoUnit||0,(x.qtd*(x.custoUnit||0)).toFixed(2),x.quem,x.obs||""]):[["-"]]),
+      [],[],[`=== SAÍDAS (${sai.length}) ===`],["Data/Hora","Produto","Categoria","Qtd","Cortesia","Preço Venda","Custo Unit.","Faturamento","Margem","Quem","Obs"],
+      ...(sai.length>0?sai.map(x=>[x.quando,x.nome,x.cat,x.qtd,x.grat?"Sim":"Não",x.precoVenda||0,x.custoUnit||0,x.grat?"0":(x.qtd*(x.precoVenda||0)).toFixed(2),x.grat?"0":(x.qtd*((x.precoVenda||0)-(x.custoUnit||0))).toFixed(2),x.quem,x.obs||""]):[["-"]]),
+    ];
+    const csv="\uFEFF"+rows.map(r=>r.map(esc).join(",")).join("\n");
+    const uri="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
+    const a=document.createElement("a");a.href=uri;
+    a.download=`pna-${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.csv`;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    toast$("📥 CSV exportado!");
+  };
+
+  if(loading)return(
+    <div style={{minHeight:"100vh",background:NAVY,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+      <div style={{fontSize:64}}>🦶</div>
+      <div style={{color:GOLD,fontFamily:"Georgia",fontSize:22,letterSpacing:2}}>PÉ NA AREIA</div>
+      <div style={{color:"rgba(255,255,255,0.5)",fontFamily:"sans-serif",fontSize:13}}>Carregando estoque…</div>
+    </div>
+  );
+
+  const custoEst=prods.reduce((s,p)=>s+p.est*p.custo,0);
+  const vendas=hist.filter(h=>h.tipo==="s"&&!h.grat);
+  const fatur=vendas.reduce((s,h)=>s+h.qtd*(h.precoVenda||0),0);
+  const cVend=vendas.reduce((s,h)=>s+h.qtd*(h.custoUnit||0),0);
+  const margem=fatur-cVend;
+  const corts=hist.filter(h=>h.grat).length;
+  const zerados=prods.filter(p=>p.est===0&&p.cat!=="Serviços");
+  const baixos=prods.filter(p=>p.est>0&&p.est<=5);
+  const cats=["Todos",...new Set(prods.map(p=>p.cat))];
+  const pF=filtro==="Todos"?prods:prods.filter(p=>p.cat===filtro);
+  const cur=clima?.current,daily=clima?.daily;
+  const mBg={position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"};
+  const mBox={background:"white",borderRadius:"24px 24px 0 0",padding:"22px 20px 44px",width:"100%",maxWidth:430};
+
+  return(
+    <div style={{maxWidth:430,margin:"0 auto",minHeight:"100vh",paddingBottom:70,background:CREAM,fontFamily:"Georgia,serif"}}>
+      <div style={{background:NAVY,padding:"14px 16px",position:"sticky",top:0,zIndex:10}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:28}}>🦶</span>
+            <div>
+              <div style={{color:"white",fontWeight:"bold",fontSize:16,letterSpacing:1}}>PÉ NA AREIA</div>
+              <div style={{color:GOLD,fontSize:9,letterSpacing:2}}>BARRACA 175 · ESTOQUE</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <style>{`@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.5)}70%{box-shadow:0 0 0 6px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+            <div style={{display:"flex",alignItems:"center",gap:4}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:"#4ade80",animation:"pulse 2s infinite"}}/>
+              <span style={{color:"rgba(255,255,255,0.5)",fontSize:9,fontFamily:"sans-serif"}}>AO VIVO</span>
+            </div>
+            <button onClick={syncManual} style={{background:"rgba(255,255,255,0.1)",border:"none",borderRadius:8,color:"white",width:34,height:32,fontSize:16,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",animation:syncing?"spin 0.6s linear":"none"}}>↺</button>
+          </div>
+        </div>
+        {syncAt&&<div style={{color:"rgba(255,255,255,0.3)",fontSize:10,fontFamily:"sans-serif",marginTop:4}}>{syncing?"Atualizando...":`Sync ${syncAt}`}</div>}
+        <div style={{display:"flex",gap:6,marginTop:10}}>
+          {[{l:"Custo Est.",v:R$(custoEst),c:GOLD},{l:"Faturamento",v:R$(fatur),c:"#6ee7b7"},{l:"Margem Real",v:R$(margem),c:"#93c5fd"},{l:"Cortesias",v:corts,c:corts>0?"#fca5a5":"rgba(255,255,255,0.4)"}].map(s=>(
+            <div key={s.l} style={{flex:1,background:"rgba(255,255,255,0.08)",borderRadius:8,padding:"6px 4px",textAlign:"center"}}>
+              <div style={{color:s.c,fontWeight:"bold",fontSize:11,fontFamily:"sans-serif"}}>{s.v}</div>
+              <div style={{color:"rgba(255,255,255,0.35)",fontSize:8,fontFamily:"sans-serif"}}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {toast&&<div style={{position:"fixed",top:110,left:"50%",transform:"translateX(-50%)",background:toast.ok?"#065f46":"#7f1d1d",color:"white",borderRadius:20,padding:"10px 20px",fontSize:13,zIndex:999,fontFamily:"sans-serif",whiteSpace:"nowrap",boxShadow:"0 4px 20px rgba(0,0,0,0.3)"}}>{toast.msg}</div>}
+
+      <div style={{padding:"14px 14px 0"}}>
+
+        {aba==="estoque"&&(<div>
+          {(zerados.length>0||baixos.length>0)&&(<div style={{background:"#fef3c7",border:`1px solid ${GOLD}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:"#92400e",fontFamily:"sans-serif"}}>
+            {zerados.length>0&&<div>🔴 {zerados.length} produto(s) zerado(s)</div>}
+            {baixos.length>0&&<div>🟡 {baixos.length} com estoque baixo (≤5)</div>}
+          </div>)}
+          <div style={{display:"flex",gap:6,overflowX:"auto",marginBottom:12,paddingBottom:2}}>
+            {cats.map(c=>(<button key={c} onClick={()=>setFiltro(c)} style={{background:filtro===c?NAVY:"white",color:filtro===c?"white":NAVY,border:`1.5px solid ${NAVY}`,borderRadius:20,padding:"5px 12px",fontSize:11,whiteSpace:"nowrap",fontFamily:"sans-serif",cursor:"pointer",fontWeight:filtro===c?"bold":"normal"}}>{c==="Todos"?"Todos":`${ICONS[c]||"📦"} ${c}`}</button>))}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {pF.map(p=>{const cor=p.est===0?"#ef4444":p.est<=5?"#f59e0b":"#10b981";return(
+              <div key={p.id} onClick={()=>{mAberto.current=true;setMov(p);setMovTipo("s");setMovQtd(1);setMovGrat(false);setMovObs("");setMovQuem("João Maurício");}} style={{background:"white",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 6px rgba(0,0,0,0.07)",borderLeft:`4px solid ${cor}`,cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:"bold",fontSize:14,color:NAVY}}>{ICONS[p.cat]||"📦"} {p.nome}</div>
+                  <div style={{fontSize:11,color:"#94a3b8",fontFamily:"sans-serif",marginTop:3}}>Custo {R$(p.custo)} · Venda {R$(p.venda)}</div>
+                </div>
+                <div style={{textAlign:"right",minWidth:48}}>
+                  <div style={{fontSize:30,fontWeight:"bold",color:cor,fontFamily:"sans-serif",lineHeight:1}}>{p.est}</div>
+                  <div style={{fontSize:10,color:"#94a3b8",fontFamily:"sans-serif"}}>un</div>
+                </div>
+              </div>
+            );})}
+          </div>
+          <button onClick={()=>{mAberto.current=true;setEditForm({nome:"",cat:"Outros",custo:"",venda:""});setEditMod("novo");}} style={{width:"100%",marginTop:14,padding:14,borderRadius:12,background:"white",border:`2px dashed ${NAVY}`,color:NAVY,fontSize:14,fontFamily:"sans-serif",cursor:"pointer"}}>+ Adicionar produto</button>
+        </div>)}
+
+        {aba==="historico"&&(<div>
+          <div style={{fontSize:17,fontWeight:"bold",color:NAVY,marginBottom:14}}>Histórico</div>
+          {hist.length===0?<div style={{textAlign:"center",color:"#94a3b8",fontFamily:"sans-serif",marginTop:60}}>Nenhuma movimentação ainda.</div>
+          :hist.map(h=>{const cor=h.grat?GOLD:h.tipo==="e"?"#10b981":h.tipo==="zerar"?"#8b5cf6":"#ef4444";const sinal=h.tipo==="e"?"+":h.tipo==="zerar"?"↺":"−";return(
+            <div key={h.id} style={{background:"white",borderRadius:10,padding:"12px 14px",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:`4px solid ${cor}`}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:"bold",fontSize:13,color:NAVY}}>{h.nome}{h.grat?" 🎁":""}{h.tipo==="zerar"?" 🔄":""}</div>
+                <div style={{fontSize:11,color:"#94a3b8",fontFamily:"sans-serif",marginTop:2}}>{h.quando} · {h.quem}{h.obs?` · ${h.obs}`:""}</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontWeight:"bold",fontSize:16,color:cor,fontFamily:"sans-serif"}}>{sinal}{h.qtd||""}</div>
+                {h.tipo==="s"&&!h.grat&&h.precoVenda?<div style={{fontSize:10,color:"#94a3b8",fontFamily:"sans-serif"}}>{R$(h.qtd*(h.precoVenda||0))}</div>:null}
+              </div>
+            </div>
+          );})}
+        </div>)}
+
+        {aba==="resumo"&&(<div>
+          <div style={{fontSize:17,fontWeight:"bold",color:NAVY,marginBottom:14}}>Resumo Acumulado</div>
+          {[{l:"Faturamento acumulado",v:R$(fatur),i:"💰",c:"#10b981",sub:"Total das vendas realizadas"},{l:"Margem real",v:R$(margem),i:"📈",c:BLUE,sub:"Faturamento − custo do vendido"},{l:"Custo do estoque atual",v:R$(custoEst),i:"📦",c:NAVY,sub:"Qtd atual × custo unitário"},{l:"Total de cortesias",v:`${corts} registro(s)`,i:"🎁",c:GOLD,sub:"Saídas sem cobrança"}].map(x=>(
+            <div key={x.l} style={{background:"white",borderRadius:12,padding:"14px 16px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.07)",display:"flex",alignItems:"center",gap:12}}>
+              <span style={{fontSize:26}}>{x.i}</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,color:"#94a3b8",fontFamily:"sans-serif"}}>{x.l}</div>
+                <div style={{fontSize:20,fontWeight:"bold",color:x.c,fontFamily:"sans-serif"}}>{x.v}</div>
+                <div style={{fontSize:10,color:"#cbd5e1",fontFamily:"sans-serif"}}>{x.sub}</div>
+              </div>
+            </div>
+          ))}
+          {zerados.length>0&&(<div style={{marginTop:6}}>
+            <div style={{fontSize:12,fontWeight:"bold",color:"#ef4444",marginBottom:8,fontFamily:"sans-serif"}}>🔴 Repor urgente:</div>
+            {zerados.map(p=><div key={p.id} style={{background:"#fef2f2",borderRadius:8,padding:"9px 12px",marginBottom:5,fontSize:13,color:NAVY,fontFamily:"sans-serif"}}>{ICONS[p.cat]||"📦"} {p.nome}</div>)}
+          </div>)}
+        </div>)}
+
+        {aba==="catalogo"&&(<div>
+          <div style={{fontSize:17,fontWeight:"bold",color:NAVY,marginBottom:14}}>Catálogo</div>
+          {prods.map(p=>(
+            <div key={p.id} style={{background:"white",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 6px rgba(0,0,0,0.07)",marginBottom:8,display:"flex",alignItems:"center",gap:10}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:"bold",fontSize:13,color:NAVY}}>{ICONS[p.cat]||"📦"} {p.nome}</div>
+                <div style={{fontSize:11,color:"#94a3b8",fontFamily:"sans-serif"}}>{p.cat} · {R$(p.custo)} → {R$(p.venda)}</div>
+              </div>
+              <button onClick={()=>{mAberto.current=true;setEditForm({nome:p.nome,cat:p.cat,custo:String(p.custo),venda:String(p.venda)});setEditMod(p);}} style={{background:BLUE,border:"none",borderRadius:8,color:"white",padding:"7px 11px",fontSize:13,cursor:"pointer"}}>✏️</button>
+              <button onClick={async()=>{if(!confirm(`Remover ${p.nome}?`))return;await salvaProds(rP.current.filter(x=>x.id!==p.id));toast$(`${p.nome} removido.`);}} style={{background:"#fef2f2",border:"none",borderRadius:8,color:"#ef4444",padding:"7px 11px",fontSize:13,cursor:"pointer"}}>🗑️</button>
+            </div>
+          ))}
+          <button onClick={()=>{mAberto.current=true;setEditForm({nome:"",cat:"Outros",custo:"",venda:""});setEditMod("novo");}} style={{width:"100%",marginTop:14,padding:14,borderRadius:12,background:"white",border:`2px dashed ${NAVY}`,color:NAVY,fontSize:14,fontFamily:"sans-serif",cursor:"pointer"}}>+ Novo produto</button>
+          <div style={{marginTop:36,borderTop:"1px solid #e2e8f0",paddingTop:20,paddingBottom:8}}>
+            {zerarConf===0&&(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
+              <button onClick={exportCSV} style={{background:"white",border:"1px solid #e2e8f0",borderRadius:10,color:"#64748b",fontSize:13,fontFamily:"sans-serif",cursor:"pointer",padding:"9px 20px",width:"100%"}}>📥 Exportar CSV</button>
+              <button onClick={()=>setZC(1)} style={{background:"none",border:"none",color:"#94a3b8",fontSize:12,fontFamily:"sans-serif",cursor:"pointer",padding:"4px 16px"}}>⚙️ Opções avançadas</button>
+            </div>)}
+            {zerarConf===1&&(<div style={{background:"#fff7ed",borderRadius:14,padding:16,border:"1px solid #fed7aa"}}>
+              <div style={{fontSize:14,fontWeight:"bold",color:"#c2410c",fontFamily:"sans-serif",marginBottom:6}}>⚠️ Zerar estoque?</div>
+              <div style={{fontSize:12,color:"#78350f",fontFamily:"sans-serif",lineHeight:1.5,marginBottom:14}}>Vai zerar as quantidades de todos os produtos. O histórico é mantido. Irreversível.</div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>setZC(0)} style={{flex:1,padding:11,borderRadius:10,background:"white",border:"1px solid #e2e8f0",color:"#64748b",fontSize:13,fontFamily:"sans-serif",cursor:"pointer"}}>Cancelar</button>
+                <button onClick={()=>setZC(2)} style={{flex:1,padding:11,borderRadius:10,background:"#f97316",border:"none",color:"white",fontSize:13,fontFamily:"sans-serif",fontWeight:"bold",cursor:"pointer"}}>Continuar →</button>
+              </div>
+            </div>)}
+            {zerarConf===2&&(<div style={{background:"#fef2f2",borderRadius:14,padding:16,border:"2px solid #ef4444"}}>
+              <div style={{fontSize:14,fontWeight:"bold",color:"#dc2626",fontFamily:"sans-serif",marginBottom:6}}>🔴 Confirmação final</div>
+              <div style={{fontSize:12,color:"#7f1d1d",fontFamily:"sans-serif",lineHeight:1.5,marginBottom:14}}>Tem certeza absoluta? Todos os estoques vão para zero. Não dá para desfazer.</div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>setZC(0)} style={{flex:1,padding:11,borderRadius:10,background:"white",border:"1px solid #e2e8f0",color:"#64748b",fontSize:13,fontFamily:"sans-serif",cursor:"pointer"}}>Cancelar</button>
+                <button onClick={zerarTudo} style={{flex:1,padding:11,borderRadius:10,background:"#dc2626",border:"none",color:"white",fontSize:13,fontFamily:"sans-serif",fontWeight:"bold",cursor:"pointer"}}>✓ Zerar agora</button>
+              </div>
+            </div>)}
+          </div>
+        </div>)}
+
+        {aba==="praia"&&(<div>
+          <div style={{background:NAVY,borderRadius:14,padding:"14px 16px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div>
+              <div style={{color:GOLD,fontWeight:"bold",fontSize:14}}>📷 Câmera ao Vivo</div>
+              <div style={{color:"rgba(255,255,255,0.6)",fontSize:11,fontFamily:"sans-serif",marginTop:2}}>Posto 6 · Praia de Copacabana</div>
+            </div>
+            <a href="https://www.skylinewebcams.com/webcam/brasil/rio-de-janeiro/rio-de-janeiro/copacabana-beach.html" target="_blank" rel="noopener noreferrer" style={{background:GOLD,color:NAVY,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:"bold",fontFamily:"sans-serif",textDecoration:"none"}}>▶ Abrir</a>
+          </div>
+          {climaLoad?<div style={{textAlign:"center",color:"#94a3b8",fontFamily:"sans-serif",padding:40}}>🌤️ Carregando previsão...</div>:<div>
+            {clima?._mock&&<div style={{background:"#fef3c7",border:`1px solid ${GOLD}`,borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:11,color:"#92400e",fontFamily:"sans-serif"}}>⚠️ Prévia ilustrativa — no celular carrega o tempo real.</div>}
+            {cur&&<div style={{background:`linear-gradient(135deg,${NAVY} 0%,${BLUE} 100%)`,borderRadius:16,padding:"20px 18px",marginBottom:14,color:"white"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <div style={{fontSize:11,opacity:0.6,fontFamily:"sans-serif",letterSpacing:1}}>AGORA · COPACABANA</div>
+                  <div style={{fontSize:52,fontWeight:"bold",fontFamily:"sans-serif",lineHeight:1,marginTop:4}}>{Math.round(cur.temperature_2m)}°C</div>
+                  <div style={{fontSize:13,opacity:0.8,fontFamily:"sans-serif",marginTop:4}}>{wDesc(cur.weathercode)}</div>
+                  <div style={{fontSize:12,opacity:0.6,fontFamily:"sans-serif",marginTop:2}}>Sensação {Math.round(cur.apparent_temperature)}°C</div>
+                </div>
+                <div style={{fontSize:64,lineHeight:1}}>{wIcon(cur.weathercode,cur.is_day)}</div>
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:16,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.15)"}}>
+                {[{i:"💧",l:"Umidade",v:`${cur.relativehumidity_2m}%`},{i:"💨",l:`Vento ${wDir(cur.winddirection_10m)}`,v:`${Math.round(cur.windspeed_10m)} km/h`},{i:"🌞",l:"UV",v:`${Math.round(cur.uv_index||0)}`}].map(x=>(
+                  <div key={x.l} style={{flex:1,textAlign:"center"}}>
+                    <div style={{fontSize:18}}>{x.i}</div>
+                    <div style={{fontSize:13,fontWeight:"bold",fontFamily:"sans-serif"}}>{x.v}</div>
+                    <div style={{fontSize:9,opacity:0.6,fontFamily:"sans-serif"}}>{x.l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>}
+            {daily&&<div style={{background:"white",borderRadius:12,padding:"12px 16px",marginBottom:14,display:"flex",gap:8,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+              {[{i:"🌅",l:"Nascer",v:daily.sunrise[0]?.split("T")[1]?.slice(0,5)||"—"},{i:"🌇",l:"Pôr",v:daily.sunset[0]?.split("T")[1]?.slice(0,5)||"—"},{i:"🌡️",l:"Min/Máx",v:`${Math.round(daily.temperature_2m_min[0])}°/${Math.round(daily.temperature_2m_max[0])}°`}].map((x,i)=>(
+                <div key={x.l} style={{flex:1,textAlign:"center",borderLeft:i>0?"1px solid #e2e8f0":"none",paddingLeft:i>0?8:0}}>
+                  <div style={{fontSize:18}}>{x.i}</div>
+                  <div style={{fontSize:13,fontWeight:"bold",color:NAVY,fontFamily:"sans-serif"}}>{x.v}</div>
+                  <div style={{fontSize:10,color:"#94a3b8",fontFamily:"sans-serif"}}>{x.l}</div>
+                </div>
+              ))}
+            </div>}
+            {daily&&<div>
+              <div style={{fontSize:11,fontWeight:"bold",color:"#94a3b8",fontFamily:"sans-serif",letterSpacing:1,marginBottom:8}}>PRÓXIMOS 5 DIAS</div>
+              {daily.time.map((dt,i)=>{const d=new Date(dt+"T12:00:00");const hoje=i===0;return(
+                <div key={dt} style={{background:hoje?"rgba(26,40,100,0.05)":"white",borderRadius:12,padding:"12px 14px",marginBottom:6,boxShadow:"0 1px 4px rgba(0,0,0,0.05)",display:"flex",alignItems:"center",gap:10,border:hoje?`1.5px solid ${NAVY}`:"1px solid #f1f5f9"}}>
+                  <div style={{width:52}}>
+                    <div style={{fontWeight:"bold",fontSize:13,color:hoje?NAVY:"#374151",fontFamily:"sans-serif"}}>{hoje?"Hoje":DIAS[d.getDay()]}</div>
+                    <div style={{fontSize:10,color:"#94a3b8",fontFamily:"sans-serif"}}>{d.getDate()} {MESES[d.getMonth()]}</div>
+                  </div>
+                  <div style={{fontSize:26,lineHeight:1}}>{wIcon(daily.weathercode[i])}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,color:"#374151",fontFamily:"sans-serif",fontWeight:hoje?"bold":"normal"}}>{wDesc(daily.weathercode[i])}</div>
+                    <div style={{fontSize:10,color:"#94a3b8",fontFamily:"sans-serif",marginTop:2}}>🌧 {daily.precipitation_probability_max[i]}% · 💨 {Math.round(daily.windspeed_10m_max[i])} km/h · 🌞 UV {Math.round(daily.uv_index_max[i]||0)}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:15,fontWeight:"bold",color:NAVY,fontFamily:"sans-serif"}}>{Math.round(daily.temperature_2m_max[i])}°</div>
+                    <div style={{fontSize:11,color:"#94a3b8",fontFamily:"sans-serif"}}>{Math.round(daily.temperature_2m_min[i])}°</div>
+                  </div>
+                </div>
+              );})}
+              <button onClick={async()=>{setClimaLoad(true);const c=await fetchClima();setClima(c||climaMock());setClimaLoad(false);}} style={{width:"100%",marginTop:8,padding:10,borderRadius:10,background:"white",border:"1px solid #e2e8f0",color:"#64748b",fontSize:12,fontFamily:"sans-serif",cursor:"pointer"}}>🔄 Atualizar previsão</button>
+            </div>}
+          </div>}
+        </div>)}
+      </div>
+
+      <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:"white",borderTop:"1px solid #e2e8f0",display:"flex",zIndex:20}}>
+        {[{id:"estoque",l:"Estoque",i:"📋"},{id:"historico",l:"Histórico",i:"🕐"},{id:"resumo",l:"Resumo",i:"📊"},{id:"catalogo",l:"Catálogo",i:"⚙️"},{id:"praia",l:"Praia",i:"🏖️"}].map(t=>(
+          <button key={t.id} onClick={()=>{setAba(t.id);_setZC(zerarConfRef.current);}} style={{flex:1,padding:"8px 2px 6px",background:"none",border:"none",display:"flex",flexDirection:"column",alignItems:"center",gap:1,cursor:"pointer",borderTop:aba===t.id?`3px solid ${GOLD}`:"3px solid transparent"}}>
+            <span style={{fontSize:18}}>{t.i}</span>
+            <span style={{fontSize:9,fontFamily:"sans-serif",color:aba===t.id?NAVY:"#94a3b8",fontWeight:aba===t.id?"bold":"normal"}}>{t.l}</span>
+          </button>
+        ))}
+      </div>
+
+      {mov&&(<div style={mBg} onClick={()=>{mAberto.current=false;setMov(null);}}>
+        <div style={mBox} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
+            <div>
+              <div style={{fontWeight:"bold",fontSize:18,color:NAVY}}>{mov.nome}</div>
+              <div style={{fontSize:12,color:"#94a3b8",fontFamily:"sans-serif",marginTop:2}}>Est: <strong style={{color:mov.est===0?"#ef4444":"#10b981"}}>{mov.est}</strong> · Custo {R$(mov.custo)} · Venda {R$(mov.venda)}</div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{setEditForm({nome:mov.nome,cat:mov.cat,custo:String(mov.custo),venda:String(mov.venda)});setEditMod(mov);setMov(null);}} style={{background:"#f1f5f9",border:"none",borderRadius:10,padding:"7px 12px",fontSize:13,cursor:"pointer",color:NAVY}}>✏️</button>
+              <button onClick={()=>{mAberto.current=false;setMov(null);}} style={{background:"#f1f5f9",border:"none",borderRadius:10,padding:"7px 12px",fontSize:16,cursor:"pointer"}}>✕</button>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:18}}>
+            {[["s","💸 Saída"],["e","📦 Entrada"]].map(([t,l])=>(<button key={t} onClick={()=>{setMovTipo(t);setMovQtd(1);setMovGrat(false);}} style={{flex:1,padding:12,borderRadius:12,border:"none",fontFamily:"sans-serif",fontSize:14,fontWeight:"bold",background:movTipo===t?(t==="e"?"#10b981":NAVY):"#f1f5f9",color:movTipo===t?"white":"#94a3b8",cursor:"pointer"}}>{l}</button>))}
+          </div>
+          <div style={{background:"#f8fafc",borderRadius:14,padding:"18px 16px",marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:20,marginBottom:14}}>
+              <button onClick={()=>setMovQtd(q=>Math.max(0,q-1))} style={{width:56,height:56,borderRadius:"50%",border:"none",background:"#fee2e2",color:"#ef4444",fontSize:28,fontWeight:"bold",cursor:"pointer"}}>−</button>
+              <div style={{fontSize:52,fontWeight:"bold",color:NAVY,fontFamily:"sans-serif",minWidth:80,textAlign:"center",lineHeight:1}}>{movQtd}</div>
+              <button onClick={()=>setMovQtd(q=>q+1)} style={{width:56,height:56,borderRadius:"50%",border:"none",background:"#dcfce7",color:"#16a34a",fontSize:28,fontWeight:"bold",cursor:"pointer"}}>+</button>
+            </div>
+            {movTipo==="e"&&(<div>
+              <div style={{fontSize:10,color:"#94a3b8",fontFamily:"sans-serif",textAlign:"center",marginBottom:8,letterSpacing:1}}>ADICIONAR RÁPIDO</div>
+              <div style={{display:"flex",gap:8}}>{[6,12,24].map(n=><button key={n} onClick={()=>setMovQtd(q=>q+n)} style={{flex:1,padding:"10px 0",borderRadius:10,border:`1.5px solid ${NAVY}`,background:"white",color:NAVY,fontSize:15,fontWeight:"bold",fontFamily:"sans-serif",cursor:"pointer"}}>+{n}</button>)}</div>
+            </div>)}
+          </div>
+          {movTipo==="s"&&(<div onClick={()=>setMovGrat(g=>!g)} style={{display:"flex",alignItems:"center",gap:12,background:movGrat?"#fef3c7":"#f8fafc",border:`1.5px solid ${movGrat?GOLD:"#e2e8f0"}`,borderRadius:12,padding:"12px 14px",marginBottom:14,cursor:"pointer"}}>
+            <span style={{fontSize:22}}>🎁</span>
+            <div style={{flex:1,fontFamily:"sans-serif",fontSize:13,color:movGrat?"#92400e":"#64748b"}}>{movGrat?"Cortesia ativada":"Marcar como cortesia"}</div>
+            <div style={{width:24,height:24,borderRadius:"50%",background:movGrat?GOLD:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:"bold",color:"white"}}>{movGrat?"✓":""}</div>
+          </div>)}
+          <select value={movQuem} onChange={e=>setMovQuem(e.target.value)} style={{width:"100%",padding:11,borderRadius:12,border:"1.5px solid #e2e8f0",fontSize:14,fontFamily:"sans-serif",color:NAVY,marginBottom:10,outline:"none"}}>
+            {["João Maurício","Pedro","Funcionário 1","Funcionário 2"].map(n=><option key={n}>{n}</option>)}
+          </select>
+          <input type="text" placeholder="Observação (opcional)" value={movObs} onChange={e=>setMovObs(e.target.value)} style={{width:"100%",padding:11,borderRadius:12,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"sans-serif",color:NAVY,marginBottom:16,outline:"none"}}/>
+          <button onClick={registrar} style={{width:"100%",padding:15,borderRadius:14,background:movGrat?GOLD:movTipo==="e"?"#10b981":NAVY,color:"white",border:"none",fontSize:16,fontWeight:"bold",fontFamily:"sans-serif",cursor:"pointer"}}>
+            {movGrat?`🎁 Cortesia (${movQtd}x)`:movTipo==="e"?`✓ Adicionar ${movQtd} ao estoque`:`✓ Registrar saída de ${movQtd}`}
+          </button>
+        </div>
+      </div>)}
+
+      {editMod&&(<div style={mBg} onClick={()=>{mAberto.current=false;setEditMod(null);}}>
+        <div style={mBox} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+            <div style={{fontWeight:"bold",fontSize:18,color:NAVY}}>{editMod==="novo"?"Novo Produto":"Editar Produto"}</div>
+            <button onClick={()=>{mAberto.current=false;setEditMod(null);}} style={{background:"#f1f5f9",border:"none",borderRadius:10,padding:"7px 12px",fontSize:16,cursor:"pointer"}}>✕</button>
+          </div>
+          {[{l:"NOME",k:"nome",t:"text"},{l:"CUSTO (R$)",k:"custo",t:"number"},{l:"PREÇO DE VENDA (R$)",k:"venda",t:"number"}].map(f=>(<div key={f.k}>
+            <div style={{fontSize:10,color:"#94a3b8",fontFamily:"sans-serif",fontWeight:"bold",letterSpacing:1.5,marginBottom:6,marginTop:14}}>{f.l}</div>
+            <input type={f.t} value={editForm[f.k]} onChange={e=>setEditForm(x=>({...x,[f.k]:e.target.value}))} style={{width:"100%",padding:12,borderRadius:12,border:"1.5px solid #e2e8f0",fontSize:16,fontFamily:"sans-serif",color:NAVY,outline:"none"}}/>
+          </div>))}
+          <div style={{fontSize:10,color:"#94a3b8",fontFamily:"sans-serif",fontWeight:"bold",letterSpacing:1.5,marginBottom:6,marginTop:14}}>CATEGORIA</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
+            {["Sucos","Bebidas","Drinks","Serviços","Outros"].map(c=>(<button key={c} onClick={()=>setEditForm(x=>({...x,cat:c}))} style={{padding:"7px 14px",borderRadius:20,border:`1.5px solid ${editForm.cat===c?NAVY:"#e2e8f0"}`,background:editForm.cat===c?NAVY:"white",color:editForm.cat===c?"white":"#64748b",fontSize:13,fontFamily:"sans-serif",cursor:"pointer"}}>{ICONS[c]||"📦"} {c}</button>))}
+          </div>
+          <button onClick={async()=>{
+            if(!editForm.nome.trim()){toast$("Digite um nome",false);return;}
+            if(editMod==="novo"){await salvaProds([...rP.current,{id:Date.now(),nome:editForm.nome,cat:editForm.cat,est:0,custo:Number(editForm.custo)||0,venda:Number(editForm.venda)||0}]);toast$(`${editForm.nome} adicionado!`);}
+            else{await salvaProds(rP.current.map(p=>p.id===editMod.id?{...p,nome:editForm.nome,cat:editForm.cat,custo:Number(editForm.custo)||0,venda:Number(editForm.venda)||0}:p));toast$("Produto atualizado!");}
+            mAberto.current=false;setEditMod(null);
+          }} style={{width:"100%",padding:15,borderRadius:14,background:NAVY,color:"white",border:"none",fontSize:16,fontWeight:"bold",fontFamily:"sans-serif",cursor:"pointer"}}>
+            {editMod==="novo"?"✓ Adicionar Produto":"✓ Salvar Alterações"}
+          </button>
+        </div>
+      </div>)}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
